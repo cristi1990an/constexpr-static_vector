@@ -7,6 +7,26 @@
 
 namespace detail
 {
+	template<std::size_t Max>
+	struct required_bits
+	{
+		static constexpr std::size_t value = Max <= 0xff ? 8 :
+											 Max <= 0xffff ? 16 :
+											 Max <= 0xffffffff ? 32 : 64;
+	};
+
+	template<std::size_t Bits> struct select_smallest_value_type;
+	template<> struct select_smallest_value_type <8> { using type = uint8_t; };
+	template<> struct select_smallest_value_type<16> { using type = uint16_t; };
+	template<> struct select_smallest_value_type<32> { using type = uint32_t; };
+	template<> struct select_smallest_value_type<64> { using type = uint64_t; };
+
+	template<std::size_t Max>
+	struct smallest_size_type : select_smallest_value_type<required_bits<Max>::value> {};
+
+	template<std::size_t Max>
+	using smallest_size_type_t = typename smallest_size_type<Max>::type;
+
 	template<std::input_iterator InputIt, std::integral Size, std::forward_iterator ForwardIt>
 	constexpr ForwardIt constexpr_uninitialized_copy_n(InputIt first, Size count, ForwardIt d_first)
 	{
@@ -116,6 +136,9 @@ namespace detail
 template<typename T, std::size_t Capacity>
 class static_vector
 {
+private:
+	using real_size_t = detail::smallest_size_type_t<Capacity>;
+
 public:
 	using value_type = T;
 	using size_type = std::size_t;
@@ -151,7 +174,7 @@ public:
 	constexpr static_vector(const static_vector& other)
 		noexcept (std::is_nothrow_copy_constructible_v<T>)
 		requires (not std::is_trivially_copy_constructible_v<T>)
-		:size_{ other.size() }
+		:size_{ other.size_ }
 	{
 		detail::constexpr_uninitialized_copy_n(other.cbegin(), other.size(), data());
 	}
@@ -160,7 +183,7 @@ public:
 	explicit(false) constexpr static_vector(const static_vector<T, OtherCapacity>& other)
 		noexcept (std::is_nothrow_copy_constructible_v<T>)
 		requires (OtherCapacity < Capacity)
-		: size_{ other.size() }
+		: size_{ static_cast<real_size_t>(other.size()) }
 	{
 		detail::constexpr_uninitialized_copy_n(other.cbegin(), other.size(), data());
 	}
@@ -168,7 +191,7 @@ public:
 	template<size_type OtherCapacity>
 	explicit(false) constexpr static_vector(const static_vector<T, OtherCapacity>& other)
 		requires (OtherCapacity > Capacity)
-		: size_{ other.size() }
+		: size_{ static_cast<real_size_t>(other.size()) }
 	{
 		if (other.size() > capacity()) [[unlikely]]
 		{
@@ -183,7 +206,7 @@ public:
 		noexcept (std::is_nothrow_move_constructible_v<T>
 			|| std::is_nothrow_copy_constructible_v<T>)
 		requires (not std::is_trivially_move_constructible_v<T>)
-		: size_{ other.size() }
+		: size_{ other.size_ }
 	{
 		if constexpr (not std::is_nothrow_move_constructible_v<T>)
 		{
@@ -195,7 +218,7 @@ public:
 	}
 
 	explicit(false) constexpr static_vector(std::initializer_list<T> init)
-		: size_{ init.size() }
+		: size_{ static_cast<real_size_t>(init.size()) }
 	{
 		if (init.size() > Capacity) [[unlikely]]
 		{
@@ -253,14 +276,14 @@ public:
 	constexpr explicit static_vector(size_type count)
 		noexcept (std::is_nothrow_default_constructible_v<T>)
 		requires (std::is_default_constructible_v<T>)
-		: size_{ count }
+		: size_{ static_cast<real_size_t>(count) }
 	{
 		detail::constexpr_uninitialized_value_construct_n(data(), count);
 	}
 
 	constexpr explicit static_vector(size_type count, const T& value)
 		noexcept (std::is_nothrow_copy_constructible_v<T>)
-		: size_{ count }
+		: size_{ static_cast<real_size_t>(count) }
 	{
 		detail::constexpr_uninitialized_fill_n(data(), count, value);
 	}
@@ -281,7 +304,7 @@ public:
 		detail::constexpr_uninitialized_copy_n(other.cbegin() + min_size, other.size() - min_size, new_end);
 		std::destroy_n(new_end, size() - min_size);
 
-		size_ = other.size();
+		size_ = static_cast<real_size_t>(other.size());
 
 		return *this;
 	}
@@ -302,7 +325,7 @@ public:
 		detail::constexpr_uninitialized_move_n(other.begin() + min_size, other.size() - min_size, new_end);
 		std::destroy_n(new_end, size() - min_size);
 
-		size_ = other.size();
+		size_ = static_cast<real_size_t>(other.size());
 
 		other.clear();
 
@@ -341,7 +364,7 @@ public:
 			init.begin() + min_size, init.size() - min_size, data() + size());
 		std::destroy_n(data() + size(), size() - min_size);
 
-		size_ = init.size();
+		size_ = static_cast<real_size_t>(init.size());
 	}
 
 	constexpr void assign(size_type count, const T& value)
@@ -359,7 +382,7 @@ public:
 		detail::constexpr_uninitialized_fill_n(data() + size(), count - min_size, value);
 		std::destroy_n(data() + size(), size() - min_size);
 
-		size_ = count;
+		size_ = static_cast<real_size_t>(count);
 	}
 
 	template<typename Range>
@@ -393,7 +416,7 @@ public:
 			detail::constexpr_uninitialized_copy_n(std::move(it), rsize - min_size, data() + size());
 			std::destroy_n(data() + size(), size() - min_size);
 
-			size_ = rsize;
+			size_ = static_cast<real_size_t>(rsize);
 		}
 		else
 		{
@@ -421,11 +444,11 @@ public:
 
 	constexpr reference at(size_type offset)
 	{
-		if (offset >= size_) [[unlikely]]
+		if (offset >= size()) [[unlikely]]
 		{
 			throw std::out_of_range{ std::format("Index {} is out of "
 				"the range of the vector. Range is [0, {})!",
-				offset, size_) };
+				offset, size()) };
 		}
 
 		return data_[offset];
@@ -433,11 +456,11 @@ public:
 
 	constexpr const_reference at(size_type offset) const
 	{
-		if (offset >= size_) [[unlikely]]
+		if (offset >= size()) [[unlikely]]
 		{
 			throw std::out_of_range{ std::format("Index {} is out of "
 				"the range of the vector. Range is [0, {})!",
-				offset, size_) };
+				offset, size()) };
 		}
 
 		return data_[offset];
@@ -588,7 +611,7 @@ public:
 		if (pos == cend()) [[unlikely]]
 		{
 			detail::constexpr_uninitialized_fill_n(data() + size(), count, value);
-			size_ += count;
+			size_ += static_cast<real_size_t>(count);
 			return begin() + std::distance(cbegin(), pos);
 		}
 
@@ -599,7 +622,7 @@ public:
 			std::make_reverse_iterator(end()));
 		std::ranges::fill_n(it, count, value);
 
-		size_ += count;
+		size_ += static_cast<real_size_t>(count);
 
 		return it;
 	}
@@ -616,7 +639,7 @@ public:
 		if (pos == cend()) [[unlikely]]
 		{
 			detail::constexpr_uninitialized_copy_n(init.begin(), init.size(), data() + size());
-			size_ += init.size();
+			size_ += static_cast<real_size_t>(init.size());
 			return begin() + std::distance(cbegin(), pos);
 		}
 
@@ -628,7 +651,7 @@ public:
 			std::make_reverse_iterator(end()));
 		std::ranges::copy_n(init.begin(), init.size(), it);
 
-		size_ += init.size();
+		size_ += static_cast<real_size_t>(init.size());
 
 		return it;
 	}
@@ -673,7 +696,7 @@ public:
 			{
 				detail::constexpr_uninitialized_copy_n(std::ranges::begin(range),
 					rsize, data() + size());
-				size_ += rsize;
+				size_ += static_cast<real_size_t>(rsize);
 				return begin() + std::distance(cbegin(), pos);
 			}
 
@@ -684,7 +707,7 @@ public:
 				std::make_reverse_iterator(end()));
 			std::ranges::copy_n(std::ranges::begin(range), rsize, it);
 
-			size_ += rsize;
+			size_ += static_cast<real_size_t>(rsize);
 
 			return it;
 		}
@@ -692,25 +715,25 @@ public:
 
 	constexpr void push_back(const_reference value)
 	{
-		if (size_ == capacity()) [[unlikely]]
+		if (size() == capacity()) [[unlikely]]
 		{
 			throw std::length_error{ std::format("Static vector push_back call would "
 				"exceed the vector's capacity of {}", capacity()) };
 		}
 
-		std::construct_at(data_ + size_, value);
+		std::construct_at(data() + size(), value);
 		++size_;
 	}
 
 	constexpr void push_back(value_type&& value)
 	{
-		if (size_ == capacity()) [[unlikely]]
+		if (size() == capacity()) [[unlikely]]
 		{
 			throw std::length_error{ std::format("Static vector push_back call would "
 				"exceed the vector's capacity of {}", capacity()) };
 		}
 
-		std::construct_at(data_ + size_, std::move(value));
+		std::construct_at(data() + size(), std::move(value));
 		++size_;
 	}
 
@@ -718,13 +741,13 @@ public:
 	requires std::is_constructible_v<T, Args...>
 	constexpr reference emplace_back(Args&& ... args)
 	{
-		if (size_ == Capacity) [[unlikely]]
+		if (size() == capacity()) [[unlikely]]
 		{
 			throw std::length_error{ std::format("Static vector emplace_back call would "
 				"exceed the vector's capacity of {}", Capacity) };
 		}
 
-		std::construct_at(data_ + size_, std::forward<Args>(args)...);
+		std::construct_at(data() + size(), std::forward<Args>(args)...);
 		++size_;
 
 		return back();
@@ -757,7 +780,7 @@ public:
 
 			detail::constexpr_uninitialized_copy_n(data() + size(),
 				rsize, std::ranges::begin(range));
-			size_ += rsize;
+			size_ += static_cast<real_size_t>(rsize);
 		}
 		else
 		{
@@ -767,7 +790,7 @@ public:
 
 	constexpr void pop_back() noexcept
 	{
-		std::destroy_at(data_ + size_ - 1);
+		std::destroy_at(data() + size() - 1);
 		--size_;
 	}
 
@@ -790,14 +813,14 @@ public:
 		
 		std::destroy_n(data() + size() - count, count);
 
-		size_ -= count;
+		size_ -= static_cast<real_size_t>(count);
 
 		return begin() + offset;
 	}
 
 	constexpr size_type size() const noexcept
 	{
-		return size_;
+		return static_cast<size_type>(size_);
 	}
 
 	constexpr size_type capacity() const noexcept
@@ -860,7 +883,7 @@ public:
 				data() + size(), count - size());
 		}
 
-		size_ = count;
+		size_ = static_cast<real_size_t>(count);
 	}
 
 	constexpr void resize(size_type count, const T& value)
@@ -882,14 +905,14 @@ public:
 				data() + size(), count - size(), value);
 		}
 
-		size_ = count;
+		size_ = static_cast<real_size_t>(count);
 	}
 
 	constexpr ~static_vector()
 	noexcept(std::is_nothrow_destructible_v<T>)
 	requires(not std::is_trivially_destructible_v<T>)
 	{
-		std::destroy_n(data_, size_);
+		std::destroy_n(data(), size());
 	}
 
 	constexpr ~static_vector() noexcept
@@ -898,7 +921,7 @@ public:
 
 	constexpr iterator begin() noexcept
 	{
-		return data_;
+		return data();
 	}
 
 	constexpr reverse_iterator rbegin() noexcept
@@ -908,7 +931,7 @@ public:
 
 	constexpr iterator end() noexcept
 	{
-		return &data_[size_];
+		return &data()[size()];
 	}
 
 	constexpr reverse_iterator rend() noexcept
@@ -918,12 +941,12 @@ public:
 
 	constexpr const_iterator begin() const noexcept
 	{
-		return data_;
+		return data();
 	}
 
 	constexpr const_iterator end() const noexcept
 	{
-		return &data_[size_];
+		return &data()[size()];
 	}
 
 	constexpr const_reverse_iterator rbegin() const noexcept
@@ -938,12 +961,12 @@ public:
 
 	constexpr const_iterator cbegin() const noexcept
 	{
-		return data_;
+		return data();
 	}
 
 	constexpr const_iterator cend() const noexcept
 	{
-		return &data_[size_];
+		return &data()[size()];
 	}
 
 	constexpr const_reverse_iterator crbegin() const noexcept
@@ -961,7 +984,7 @@ private:
 		std::byte dummy_{};
 		T data_[Capacity];
 	};
-	size_type size_ = 0;
+	real_size_t size_ = 0;
 };
 
 template<typename T, std::size_t Size1, std::size_t Size2>
