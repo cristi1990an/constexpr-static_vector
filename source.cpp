@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <ranges>
 
+#include <cassert>
+
 #include "static_vector.hpp"
 
 
@@ -177,8 +179,8 @@ constexpr bool test_9()
 
 constexpr bool test_10()
 {
-	static_vector<std::string, 10> vec_1;
-	static_vector<std::string, 10> vec_2;
+	static_vector<std::string, 7> vec_1{};
+	static_vector<std::string, 10> vec_2{};
 
 	vec_1.emplace_back("string 2");
 
@@ -190,6 +192,161 @@ constexpr bool test_10()
 	vec_2 = vec_1;
 
 	return std::ranges::equal(vec_1, vec_2);
+}
+
+constexpr bool test_11()
+{
+	using namespace std::literals;
+
+	static_vector<std::string, 20> vec;
+	std::vector <std::string> expected;
+
+	for (const auto index : std::views::iota(0u, 7u))
+	{
+		vec.emplace_back("string "s + (char)(index + '0'));
+		expected.emplace_back("string "s + (char)(index + '0'));
+	}
+
+	vec.emplace(vec.begin(), "{    }");
+	vec.emplace(vec.end(), "{    }");
+	vec.emplace(vec.begin() + 4, "{    }");
+
+	expected.emplace(expected.begin(), "{    }");
+	expected.emplace(expected.end(), "{    }");
+	expected.emplace(expected.begin() + 4, "{    }");
+
+	return std::ranges::equal(vec, expected);
+}
+
+constexpr bool test_12()
+{
+	using namespace std::literals;
+
+	static_vector<std::string, 20> vec;
+	std::vector <std::string> expected;
+
+	for (const auto index : std::views::iota(0u, 7u))
+	{
+		vec.emplace_back("string "s + (char)(index + '0'));
+		expected.emplace_back("string "s + (char)(index + '0'));
+	}
+
+	vec.insert(vec.begin(), { "{    }"s, "{    }"s, "{    }"s });
+	expected.insert(expected.begin(), { "{    }"s, "{    }"s, "{    }"s });
+
+	vec.insert(vec.end(), { "{    }"s, "{    }"s, "{    }"s });
+	expected.insert(expected.end(), { "{    }"s, "{    }"s, "{    }"s });
+
+	vec.insert(vec.begin() + 4, { "{    }"s, "{    }"s, "{    }"s });
+	expected.insert(expected.begin() + 4, { "{    }"s, "{    }"s, "{    }"s });
+
+	return std::ranges::equal(vec, expected);
+}
+
+constexpr bool test_13()
+{
+	using namespace std::literals;
+
+	const std::array to_insert{ "{    }"s, "{    }"s, "{    }"s };
+
+	static_vector<std::string, 20> vec;
+	std::vector <std::string> expected;
+
+	for (const auto index : std::views::iota(0u, 7u))
+	{
+		vec.emplace_back("string "s + (char)(index + '0'));
+		expected.emplace_back("string "s + (char)(index + '0'));
+	}
+
+	vec.insert(vec.begin(), to_insert.begin(), to_insert.end());
+	expected.insert(expected.begin(), to_insert.begin(), to_insert.end());
+
+	vec.insert(vec.end(), to_insert.begin(), to_insert.end());
+	expected.insert(expected.end(), to_insert.begin(), to_insert.end());
+
+	vec.insert(vec.begin() + 4, to_insert.begin(), to_insert.end());
+	expected.insert(expected.begin() + 4, to_insert.begin(), to_insert.end());
+
+	return std::ranges::equal(vec, expected);
+}
+
+constexpr bool test_14()
+{
+	using namespace std::literals;
+
+	static_vector<std::string, 20> vec;
+	std::vector <std::string> expected;
+
+	for (const auto index : std::views::iota(0u, 7u))
+	{
+		vec.emplace_back("string "s + (char)(index + '0'));
+		expected.emplace_back("string "s + (char)(index + '0'));
+	}
+
+	vec.insert(vec.begin(), 3, "{    }"s);
+	expected.insert(expected.begin(), 3, "{    }"s);
+
+	vec.insert(vec.end(), 3, "{    }"s);
+	expected.insert(expected.end(), 3, "{    }"s);
+
+	vec.insert(vec.begin() + 4, 3, "{    }"s);
+	expected.insert(expected.begin() + 4, 3, "{    }"s);
+
+	return std::ranges::equal(vec, expected);
+}
+
+constexpr bool test_15()
+{
+	using namespace std::literals;
+
+	static_vector<std::string, 20> vec;
+	std::vector <std::string> expected;
+
+	for (const auto index : std::views::iota(0u, 20u))
+	{
+		vec.emplace_back("string "s + (char)(index + '0'));
+		expected.emplace_back("string "s + (char)(index + '0'));
+	}
+
+	vec.erase(vec.begin());
+	vec.erase(vec.end() - 1);
+	vec.erase(vec.begin() + 9);
+	vec.erase(vec.begin());
+	vec.erase(vec.end() - 1);
+	vec.erase(vec.begin() + 9);
+
+	expected.erase(expected.begin());
+	expected.erase(expected.end() - 1);
+	expected.erase(expected.begin() + 9);
+	expected.erase(expected.begin());
+	expected.erase(expected.end() - 1);
+	expected.erase(expected.begin() + 9);
+
+	return std::ranges::equal(vec, expected);
+}
+
+constexpr bool test_16()
+{
+	using namespace std::literals;
+
+	static_vector<std::string, 30> vec;
+	std::vector <std::string> expected;
+
+	for (const auto index : std::views::iota(0u, 30u))
+	{
+		vec.emplace_back("string "s + (char)(index + '0'));
+		expected.emplace_back("string "s + (char)(index + '0'));
+	}
+
+	vec.erase(vec.begin(), vec.begin() + 2);
+	vec.erase(vec.begin() + 6, vec.begin() + 9);
+	vec.erase(vec.end() - 3, vec.end() - 1);
+
+	expected.erase(expected.begin(), expected.begin() + 2);
+	expected.erase(expected.begin() + 6, expected.begin() + 9);
+	expected.erase(expected.end() - 3, expected.end() - 1);
+
+	return std::ranges::equal(vec, expected);
 }
 
 template<typename Vec>
@@ -237,7 +394,31 @@ int main()
 		static_assert(test_6() == true);
 		static_assert(test_7() == true);
 		static_assert(test_8() == true);
-		static_assert(test_9() == true);
-		//static_assert(test_10() == true);
+		// static_assert(test_9() == true); 
+		// static_assert(test_10() == true); 
+		static_assert(test_11() == true);
+		static_assert(test_12() == true);
+		static_assert(test_13() == true);
+		static_assert(test_14() == true);
+		static_assert(test_15() == true);
+		static_assert(test_16() == true);
+	}
+	{
+		assert(test_1<2>() == '3');
+		assert(test_2() == (1.1f + 2.2f + 3.3f));
+		assert(test_3() == true);
+		assert(test_4() == 100);
+		assert(test_5() == true);
+		assert(test_6() == true);
+		assert(test_7() == true);
+		assert(test_8() == true);
+		assert(test_9() == true);
+		assert(test_10() == true);
+		assert(test_11() == true);
+		assert(test_12() == true);
+		assert(test_13() == true);
+		assert(test_14() == true);
+		assert(test_15() == true);
+		assert(test_16() == true);
 	}
 }

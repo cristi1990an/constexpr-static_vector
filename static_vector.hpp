@@ -524,11 +524,46 @@ public:
 		std::construct_at(data() + size(), std::move(back()));
 
 		iterator it = begin() + std::distance(cbegin(), pos);
-		std::ranges::move_backward(it, end() - 1, it + 1);
+		std::ranges::move_backward(it, end() - 1, end());
 
 		try
 		{
 			*it = std::move(value);
+		}
+		catch (...)
+		{
+			std::ranges::move(it + 1, end() + 1, it);
+			throw;
+		}
+
+		++size_;
+
+		return it;
+	}
+
+	template<typename ... Args>
+	constexpr iterator emplace(const_iterator pos, Args&& ... args)
+	{
+		if (size() == capacity()) [[unlikely]]
+		{
+			throw std::length_error{ std::format("Static vector emplace call would "
+				"exceed the vector's capacity of {}", capacity()) };
+		}
+
+		if (pos == cend()) [[unlikely]]
+		{
+			emplace_back(std::forward<Args>(args)...);
+			return begin() + std::distance(cbegin(), pos);
+		}
+
+		std::construct_at(data() + size(), std::move(back()));
+
+		iterator it = begin() + std::distance(cbegin(), pos);
+		std::ranges::move_backward(it, end() - 1, end());
+
+		try
+		{
+			*it = T(std::forward<Args>(args)...);
 		}
 		catch (...)
 		{
@@ -559,8 +594,10 @@ public:
 
 		iterator it = begin() + std::distance(cbegin(), pos);
 		detail::constexpr_uninitialized_move_n(end() - count, count, data() + size());
-
-		detail::constexpr_uninitialized_fill_n(it, count, value);
+		std::ranges::move(std::make_reverse_iterator(end() - count),
+			std::make_reverse_iterator(it),
+			std::make_reverse_iterator(end()));
+		std::ranges::fill_n(it, count, value);
 
 		size_ += count;
 
@@ -584,9 +621,12 @@ public:
 		}
 
 		iterator it = begin() + std::distance(cbegin(), pos);
-		detail::constexpr_uninitialized_move_n(end() - init.size(), init.size(), data() + size());
 
-		detail::constexpr_uninitialized_copy_n(init.begin(), init.size(), it);
+		detail::constexpr_uninitialized_move_n(end() - init.size(), init.size(), data() + size());
+		std::ranges::move(std::make_reverse_iterator(end() - init.size()),
+			std::make_reverse_iterator(it),
+			std::make_reverse_iterator(end()));
+		std::ranges::copy_n(init.begin(), init.size(), it);
 
 		size_ += init.size();
 
@@ -597,7 +637,7 @@ public:
 	constexpr iterator insert(const_iterator pos, InputIt first, InputIt last)
 		requires (std::constructible_from<T, std::iter_value_t<InputIt>>)
 	{
-		return insert(pos, std::ranges::subrange(std::move(first), std::move(last)));
+		return insert_range(pos, std::ranges::subrange(std::move(first), std::move(last)));
 	}
 
 	template<std::ranges::input_range Range>
@@ -610,7 +650,7 @@ public:
 			return begin() + std::distance(cbegin(), pos);
 		}
 		{
-			const size_type rsize = []()
+			const size_type rsize = [&]()
 			{
 				if constexpr (std::ranges::sized_range<Range>)
 				{
@@ -639,8 +679,10 @@ public:
 
 			iterator it = begin() + std::distance(cbegin(), pos);
 			detail::constexpr_uninitialized_move_n(end() - rsize, rsize, data() + size());
-
-			detail::constexpr_uninitialized_copy_n(std::ranges::begin(range), rsize, it);
+			std::ranges::move(std::make_reverse_iterator(end() - rsize),
+				std::make_reverse_iterator(it),
+				std::make_reverse_iterator(end()));
+			std::ranges::copy_n(std::ranges::begin(range), rsize, it);
 
 			size_ += rsize;
 
