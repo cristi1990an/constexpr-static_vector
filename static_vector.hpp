@@ -10,9 +10,7 @@ namespace detail
 	template<std::size_t Max>
 	struct required_bits
 	{
-		static constexpr std::size_t value = Max <= 0xff ? 8 :
-											 Max <= 0xffff ? 16 :
-											 Max <= 0xffffffff ? 32 : 64;
+		static constexpr std::size_t value = Max <= 0xff ? 8 : Max <= 0xffff ? 16 : Max <= 0xffffffff ? 32 : 64;
 	};
 
 	template<std::size_t Bits> struct select_smallest_value_type;
