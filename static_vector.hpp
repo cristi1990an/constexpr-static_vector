@@ -10,14 +10,15 @@ namespace detail
 	template<std::size_t Max>
 	struct required_bits
 	{
-		static constexpr std::size_t value = Max <= 0xff ? 8 : Max <= 0xffff ? 16 : Max <= 0xffffffff ? 32 : 64;
+		static constexpr std::size_t value = Max <= 255uLL ? 8
+			: Max <= 65535uLL ? 16 : Max <= 4294967295uLL ? 32 : 64;
 	};
 
 	template<std::size_t Bits> struct select_smallest_value_type;
-	template<> struct select_smallest_value_type <8> { using type = uint8_t; };
-	template<> struct select_smallest_value_type<16> { using type = uint16_t; };
-	template<> struct select_smallest_value_type<32> { using type = uint32_t; };
-	template<> struct select_smallest_value_type<64> { using type = uint64_t; };
+	template<> struct select_smallest_value_type <8> { using type = std::uint_least8_t; };
+	template<> struct select_smallest_value_type<16> { using type = std::uint_least16_t; };
+	template<> struct select_smallest_value_type<32> { using type = std::uint_least32_t; };
+	template<> struct select_smallest_value_type<64> { using type = std::uint_least64_t; };
 
 	template<std::size_t Max>
 	struct smallest_size_type : select_smallest_value_type<required_bits<Max>::value> {};
@@ -254,9 +255,9 @@ public:
 	template<std::ranges::input_range Range>
 	constexpr static_vector(std::from_range_t, Range&& range)
 	{
-		if constexpr (std::ranges::sized_range<Range>)
+		if constexpr (std::ranges::sized_range<Range> || std::ranges::forward_range<Range>)
 		{
-			size_ = std::ranges::size(range);
+			size_ = std::ranges::distance(range);
 			if (size_ > Capacity) [[unlikely]]
 			{
 				throw std::length_error(std::format("Attempting to construct static_vector with a "
@@ -267,7 +268,10 @@ public:
 		}
 		else
 		{
-			std::ranges::copy(std::forward<Range>(range), std::back_inserter(*this));
+			for (auto&& val : range)
+			{
+				emplace_back(std::forward<decltype(val)>(val));
+			}
 		}
 	}
 
@@ -389,17 +393,7 @@ public:
 	{
 		if constexpr (std::ranges::sized_range<Range> || std::ranges::forward_range<Range>)
 		{
-			const size_type rsize = [&]()
-			{
-				if constexpr (std::ranges::sized_range<Range>)
-				{
-					return std::ranges::size(range);
-				}
-				else
-				{
-					return std::ranges::distance(range);
-				}
-			}();
+			const size_type rsize = std::ranges::distance(range);
 
 			if (rsize > capacity()) [[unlikely]]
 			{
@@ -419,7 +413,10 @@ public:
 		else
 		{
 			clear();
-			std::ranges::copy(std::forward<Range>(range), std::back_inserter(*this));
+			for (auto&& val : range)
+			{
+				emplace_back(std::forward<decltype(val)>(val));
+			}
 		}
 	}
 
@@ -670,6 +667,7 @@ public:
 			std::ranges::copy(std::forward<Range>(range), std::inserter(*this, pos));
 			return begin() + std::distance(cbegin(), pos);
 		}
+		else
 		{
 			const size_type rsize = [&]()
 			{
@@ -904,6 +902,29 @@ public:
 		}
 
 		size_ = static_cast<real_size_t>(count);
+	}
+
+	template<typename Operation>
+	constexpr void resize_and_overwrite(size_type count, Operation op)
+	{
+		static_assert(std::invocable<Operation&&, pointer, size_type>,
+			"Operation provided doesn't have the correct signature");
+		using operation_return_t = std::invoke_result_t<Operation&&, pointer, size_type>;
+		static_assert(std::convertible_to<operation_return_t, real_size_t>,
+			"Operation provided doesn't return a size.");
+
+		if (count > capacity()) [[unlikely]]
+		{
+			throw std::length_error{ std::format("resize_and_overwrite request for {} "
+				"elements on static_vector of max capacity of {} cannot be fulfilled.",
+				count, capacity()) };
+		}
+
+		const size_type min = std::min(count, size());
+		std::destroy_n(data() + min, size() - min);
+
+		const size_type new_size = std::invoke(std::move(op), data(), min);
+		size_ = static_cast<real_size_t>(new_size);
 	}
 
 	constexpr ~static_vector()
